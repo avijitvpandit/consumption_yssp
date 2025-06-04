@@ -1,0 +1,21 @@
+# Ignore all raw and processed data
+data/raw/
+data/processed/
+
+# Allow a small example file
+!data/sample.csv
+
+# Ignore temporary and notebook outputs
+*.ipynb_checkpoints
+*.log
+*.tmp
+*.bak
+
+# Ignore local system clutter
+.DS_Store
+Thumbs.db
+~$*
+
+# Ignore Python cache and compiled files
+__pycache__/
+*.py[cod]
