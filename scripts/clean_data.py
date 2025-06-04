@@ -35,51 +35,61 @@ var_map = {
 female_map = {0: 'Male', 1: 'Female'}
 edu_map = {1: 'Primary', 2: 'Secondary', 3: 'Tertiary'}
 
-# Process only relevant files
-csv_files = [f for f in data_path.glob("*.csv") if f.stem.split('_')[-1].upper() in EEA_ISO3]
+# Read all files in the directory first. EU filtering will happen after
+# concatenating the individual files.
+csv_files = list(data_path.glob("*.csv"))
 
 # Clear previous output files
 for p in [out_path, sample_path]:
     if p.exists():
         p.unlink()
 
-# Process all files
-is_first = True
-sample_written = False
+# Collect cleaned frames for each file
+cleaned_frames = []
 
 for f in csv_files:
     try:
-        df = pd.read_csv(f, usecols=lambda x: x in ['female', 'edu', 'age', 'iso3', 'year', 'varnum', 'median'])
+        df = pd.read_csv(
+            f,
+            usecols=lambda x: x in ['female', 'edu', 'age', 'iso3', 'year', 'varnum', 'median']
+        )
         mask = (
-            df['female'].isin([0, 1]) &
-            df['edu'].isin([1, 2, 3]) &
-            (df['age'] < 100) &
-            (~df['female'].isna()) &
-            (~df['edu'].isna()) &
-            (~df['age'].isna())
+            df['female'].isin([0, 1])
+            & df['edu'].isin([1, 2, 3])
+            & (df['age'] < 100)
+            & (~df['female'].isna())
+            & (~df['edu'].isna())
+            & (~df['age'].isna())
         )
         df = df[mask].copy()
         df['iso3'] = df['iso3'].astype(str)
-        df = df[df['iso3'].isin(EEA_ISO3)]
-        if df.empty:
-            continue
-
-        df['sex'] = df['female'].map(female_map)
-        df['education'] = df['edu'].map(edu_map)
-        df['country'] = df['iso3'].apply(lambda x: pycountry.countries.get(alpha_3=x).name)
-        df['food'] = df['varnum'].map(var_map)
-        df = df.rename(columns={'median': 'value'})
-
-        output = df.melt(id_vars=['country', 'iso3', 'year', 'sex', 'education', 'age'], var_name='food', value_name='value')
-        output.to_csv(out_path, mode='a', index=False, header=is_first)
-        is_first = False
-
-        if not sample_written:
-            output.sample(5, random_state=42).to_csv(sample_path, index=False)
-            sample_written = True
-
+        cleaned_frames.append(df)
     except Exception as e:
         print(f"Error processing {f.name}: {e}")
+
+if not cleaned_frames:
+    raise RuntimeError("No data files were processed successfully.")
+
+# Concatenate all cleaned data and then keep only EU/EEA countries
+df = pd.concat(cleaned_frames, ignore_index=True)
+df = df[df['iso3'].isin(EEA_ISO3)]
+
+df['sex'] = df['female'].map(female_map)
+df['education'] = df['edu'].map(edu_map)
+df['country'] = df['iso3'].apply(lambda x: pycountry.countries.get(alpha_3=x).name)
+df['food'] = df['varnum'].map(var_map)
+df = df.rename(columns={'median': 'value'})
+
+output = df.melt(
+    id_vars=['country', 'iso3', 'year', 'sex', 'education', 'age'],
+    var_name='food',
+    value_name='value',
+)
+
+output.to_csv(out_path, index=False)
+
+# Create sample after entire output is generated
+output.sample(5, random_state=42).to_csv(sample_path, index=False)
 
 print(f"\n✅ Cleaned panel saved to {out_path.resolve()}")
 print(f"📄 Sample file saved to {sample_path.resolve()}")
